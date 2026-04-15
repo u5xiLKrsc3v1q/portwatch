@@ -2,49 +2,46 @@ package monitor
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
+	"github.com/user/portwatch/internal/config"
+	"github.com/user/portwatch/internal/notifier"
 	"github.com/user/portwatch/internal/scanner"
 )
 
-// Notifier is the interface for sending alerts.
-type Notifier interface {
-	Send(title, message string) error
-}
-
-// Monitor periodically scans port bindings and alerts on changes.
+// Monitor ties together scanning, state tracking and notification.
 type Monitor struct {
-	interval  time.Duration
-	notifiers []Notifier
-	snapshot  *scanner.Snapshot
-	logger    *log.Logger
+	cfg      *config.Config
+	notifier notifier.Notifier
+	scanner  *scanner.Filter
+	state    *scanner.StateStore
+	logger   *log.Logger
 }
 
-// New creates a new Monitor with the given poll interval and notifiers.
-func New(interval time.Duration, logger *log.Logger, notifiers ...Notifier) *Monitor {
+// New creates a Monitor from the given config and notifier.
+func New(cfg *config.Config, n notifier.Notifier, logger *log.Logger) *Monitor {
+	var f *scanner.Filter
+	if len(cfg.BlockedPorts) > 0 || len(cfg.BlockedAddresses) > 0 {
+		f = scanner.NewFilter(cfg.BlockedPorts, cfg.BlockedAddresses)
+	}
 	if logger == nil {
 		logger = log.Default()
 	}
 	return &Monitor{
-		interval:  interval,
-		notifiers: notifiers,
-		logger:    logger,
+		cfg:     cfg,
+		notifier: n,
+		scanner: f,
+		state:   scanner.NewStateStore(),
+		logger:  logger,
 	}
 }
 
-// Run starts the monitoring loop. It blocks until ctx is cancelled.
+// Run starts the polling loop and blocks until ctx is cancelled.
 func (m *Monitor) Run(ctx context.Context) error {
-	ticker := time.NewTicker(m.interval)
+	ticker := time.NewTicker(m.cfg.Interval)
 	defer ticker.Stop()
-
-	// Take initial snapshot.
-	initial, err := scanner.Scan()
-	if err != nil {
-		return err
-	}
-	m.snapshot = scanner.NewSnapshot(initial)
-	m.logger.Printf("portwatch: initial scan found %d listeners", len(initial))
 
 	for {
 		select {
@@ -52,7 +49,7 @@ func (m *Monitor) Run(ctx context.Context) error {
 			return ctx.Err()
 		case <-ticker.C:
 			if err := m.tick(); err != nil {
-				m.logger.Printf("portwatch: scan error: %v", err)
+				m.logger.Printf("scan error: %v", err)
 			}
 		}
 	}
@@ -63,31 +60,33 @@ func (m *Monitor) tick() error {
 	if err != nil {
 		return err
 	}
-	next := scanner.NewSnapshot(entries)
-	diff := m.snapshot.Diff(next)
-	m.snapshot = next
 
-	for _, e := range diff.Added {
-		msg := formatEntry("new listener detected", e)
-		m.logger.Println(msg)
-		m.notify("New Port Listener", msg)
+	if m.scanner != nil {
+		filtered := entries[:0]
+		for _, e := range entries {
+			if m.scanner.Allow(e) {
+				filtered = append(filtered, e)
+			}
+		}
+		entries = filtered
 	}
-	for _, e := range diff.Removed {
-		msg := formatEntry("listener removed", e)
-		m.logger.Println(msg)
-		m.notify("Port Listener Removed", msg)
+
+	snap := scanner.NewSnapshot(entries)
+	changes := m.state.UpdateAndDiff(snap)
+
+	for _, e := range changes.Added {
+		msg := fmt.Sprintf("[portwatch] new listener: %s", formatEntry(e))
+		if err := m.notifier.Send("New Port Listener", msg); err != nil {
+			m.logger.Printf("notify error: %v", err)
+		}
+	}
+	for _, e := range changes.Removed {
+		m.logger.Printf("port closed: %s", formatEntry(e))
 	}
 	return nil
 }
 
-func (m *Monitor) notify(title, message string) {
-	for _, n := range m.notifiers {
-		if err := n.Send(title, message); err != nil {
-			m.logger.Printf("portwatch: notifier error: %v", err)
-		}
-	}
-}
-
-func formatEntry(event string, e scanner.Entry) string {
-	return event + ": " + e.Protocol + " port " + e.LocalAddress
+// formatEntry returns a human-readable string for an Entry.
+func formatEntry(e scanner.Entry) string {
+	return fmt.Sprintf("%s %s:%d (%s)", e.Protocol, e.Address, e.Port, e.State)
 }
