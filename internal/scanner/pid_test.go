@@ -37,6 +37,26 @@ func TestReadProcessName_MissingFile(t *testing.T) {
 	}
 }
 
+func TestReadProcessName_NoTrailingNewline(t *testing.T) {
+	// Ensure readProcessName handles comm files without a trailing newline.
+	dir := t.TempDir()
+	commFile := filepath.Join(dir, "comm")
+	if err := os.WriteFile(commFile, []byte("nonewline"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(commFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := string(data)
+	if len(name) > 0 && name[len(name)-1] == '\n' {
+		name = name[:len(name)-1]
+	}
+	if name != "nonewline" {
+		t.Errorf("expected 'nonewline', got %q", name)
+	}
+}
+
 func TestLookupPID_NotFound(t *testing.T) {
 	// Use an inode that will never match any real socket.
 	_, err := LookupPID(0xDEADBEEFDEAD)
