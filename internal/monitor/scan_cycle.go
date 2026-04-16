@@ -4,63 +4,63 @@ import (
 	"context"
 	"log"
 
-	"github.com/derekg/portwatch/internal/notifier"
-	"github.com/derekg/portwatch/internal/scanner"
+	"github.com/danvolchek/portwatch/internal/notifier"
+	"github.com/danvolchek/portwatch/internal/scanner"
 )
 
-// ScanCycle performs a single scan-diff-alert iteration.
-// It reads current port bindings, computes changes against the stored state,
-// optionally filters against a baseline, and fires notifications.
+// ScanCycle performs a single scan iteration: scan → diff → filter → notify.
 type ScanCycle struct {
-	state    *scanner.StateStore
-	filter   *scanner.Filter
-	baseline *BaselineManager
-	notify   notifier.Notifier
-	logger   *log.Logger
+	scanner    func() ([]scanner.Entry, error)
+	state      *scanner.StateStore
+	tagFilter  *TagFilter
+	suppressor *Suppressor
+	notifier   notifier.Notifier
+	logger     *log.Logger
 }
 
 // NewScanCycle constructs a ScanCycle with the provided dependencies.
 func NewScanCycle(
+	scanFn func() ([]scanner.Entry, error),
 	state *scanner.StateStore,
-	filter *scanner.Filter,
-	baseline *BaselineManager,
+	tagFilter *TagFilter,
+	suppressor *Suppressor,
 	n notifier.Notifier,
 	logger *log.Logger,
 ) *ScanCycle {
 	return &ScanCycle{
-		state:    state,
-		filter:   filter,
-		baseline: baseline,
-		notify:   n,
-		logger:   logger,
+		scanner:    scanFn,
+		state:      state,
+		tagFilter:  tagFilter,
+		suppressor: suppressor,
+		notifier:   n,
+		logger:     logger,
 	}
 }
 
-// Run executes one scan cycle. It is safe to call repeatedly.
-func (sc *ScanCycle) Run(ctx context.Context) {
-	entries, err := scanner.Scan(sc.filter)
+// Run executes one scan cycle.
+func (c *ScanCycle) Run(ctx context.Context) {
+	entries, err := c.scanner()
 	if err != nil {
-		sc.logger.Printf("scan error: %v", err)
+		c.logger.Printf("scan error: %v", err)
 		return
 	}
 
-	added, removed := sc.state.UpdateAndDiff(entries)
+	added, removed := c.state.UpdateAndDiff(entries)
 
-	if sc.baseline != nil {
-		added = sc.baseline.FilterAdded(added)
+	if c.tagFilter != nil {
+		added, removed = c.tagFilter.Filter(added, removed)
+	}
+
+	if c.suppressor != nil {
+		added, removed = c.suppressor.Apply(added, removed)
+	}
+
+	if len(added) == 0 && len(removed) == 0 {
+		return
 	}
 
 	event := NewAlertEvent(added, removed)
-	if !event.HasChanges() {
-		return
-	}
-
-	sc.logger.Printf("changes detected: %s", event.Summary())
-
-	if sc.notify == nil {
-		return
-	}
-	if err := sc.notify.Send(ctx, event.Summary()); err != nil {
-		sc.logger.Printf("notification error: %v", err)
+	if err := c.notifier.Send(ctx, event.Summary()); err != nil {
+		c.logger.Printf("notify error: %v", err)
 	}
 }
