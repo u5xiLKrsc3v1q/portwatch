@@ -66,3 +66,13 @@ func TestInodePIDMap_Type(t *testing.T) {
 		t.Error("unexpected entry for inode 9999")
 	}
 }
+
+func TestInodePIDMap_Overwrite(t *testing.T) {
+	// Verify that inserting a new PID for an existing inode overwrites the old value.
+	m := make(InodePIDMap)
+	m[1234] = 10
+	m[1234] = 20
+	if m[1234] != 20 {
+		t.Errorf("expected pid 20 after overwrite, got %d", m[1234])
+	}
+}
