@@ -16,6 +16,15 @@ func makeScanHistoryAPI(t *testing.T) (*ScanHistoryAPI, *ScanHistory, *http.Serv
 	return api, h, mux
 }
 
+func decodeJSONResponse(t *testing.T, rr *httptest.ResponseRecorder) map[string]interface{} {
+	t.Helper()
+	var resp map[string]interface{}
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	return resp
+}
+
 func TestScanHistoryAPI_Empty(t *testing.T) {
 	_, _, mux := makeScanHistoryAPI(t)
 	rr := httptest.NewRecorder()
@@ -25,10 +34,7 @@ func TestScanHistoryAPI_Empty(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rr.Code)
 	}
-	var resp map[string]interface{}
-	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
-		t.Fatalf("decode error: %v", err)
-	}
+	resp := decodeJSONResponse(t, rr)
 	if resp["count"].(float64) != 0 {
 		t.Errorf("expected count 0, got %v", resp["count"])
 	}
@@ -46,10 +52,7 @@ func TestScanHistoryAPI_WithRecords(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rr.Code)
 	}
-	var resp map[string]interface{}
-	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
-		t.Fatalf("decode error: %v", err)
-	}
+	resp := decodeJSONResponse(t, rr)
 	if resp["count"].(float64) != 2 {
 		t.Errorf("expected count 2, got %v", resp["count"])
 	}
