@@ -46,3 +46,16 @@ func Diff(prev, curr Snapshot) DiffResult {
 func (d DiffResult) HasChanges() bool {
 	return len(d.Added) > 0 || len(d.Removed) > 0
 }
+
+// Equal reports whether two snapshots contain the same set of port entries.
+func (s Snapshot) Equal(other Snapshot) bool {
+	if len(s) != len(other) {
+		return false
+	}
+	for key := range s {
+		if _, exists := other[key]; !exists {
+			return false
+		}
+	}
+	return true
+}
