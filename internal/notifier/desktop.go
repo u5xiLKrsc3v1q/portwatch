@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os/exec"
 	"runtime"
+	"strings"
 )
 
 // DesktopNotifier sends desktop notifications using platform-native tools.
@@ -58,13 +59,18 @@ func (d *DesktopNotifier) sendDarwin(title, message string) error {
 }
 
 func (d *DesktopNotifier) sendWindows(title, message string) error {
+	// Escape single quotes to prevent PowerShell script injection.
+	safeTitle := strings.ReplaceAll(title, "'", "''")
+	safeMessage := strings.ReplaceAll(message, "'", "''")
+	safeAppName := strings.ReplaceAll(d.AppName, "'", "''")
+
 	script := fmt.Sprintf(
 		`[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null; `+
 			`$template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02); `+
 			`$template.SelectSingleNode('//text[@id=1]').InnerText = '%s'; `+
 			`$template.SelectSingleNode('//text[@id=2]').InnerText = '%s'; `+
 			`[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('%s').Show([Windows.UI.Notifications.ToastNotification]::new($template))`,
-		title, message, d.AppName,
+		safeTitle, safeMessage, safeAppName,
 	)
 	cmd := exec.Command("powershell", "-Command", script)
 	if out, err := cmd.CombinedOutput(); err != nil {
