@@ -1,50 +1,33 @@
 package monitor
 
-import (
-	"net/http"
-)
+import "net/http"
 
-// RouterConfig holds all API handlers for the HTTP server.
-type RouterConfig struct {
-	EventLog      *EventLog
-	ScanHistory   *ScanHistory
-	AlertHistory  *AlertHistory
-	PortTrend     *PortTrend
-	PortSnapshot  *PortSnapshotStore
-	ProcessMap    *ProcessMapStore
-	Metrics       *Metrics
-}
-
-// NewRouter builds and returns an http.ServeMux wired to all API endpoints.
-func NewRouter(cfg RouterConfig) *http.ServeMux {
+// NewRouter builds the HTTP mux wiring all API handlers.
+func NewRouter(
+	events *EventLog,
+	metrics *Metrics,
+	history *ScanHistory,
+	alertHistory *AlertHistory,
+	trend *PortTrend,
+	snapshot *PortSnapshotStore,
+	processMap *ProcessMapStore,
+	topPorts *TopPortsStore,
+	velocity *PortVelocity,
+	age *PortAgeStore,
+	risk *PortRiskStore,
+) *http.ServeMux {
 	mux := http.NewServeMux()
-
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
-	})
-
-	if cfg.EventLog != nil {
-		mux.Handle("/events", NewHTTPAPI(cfg.EventLog))
-	}
-	if cfg.ScanHistory != nil {
-		mux.Handle("/scans", NewScanHistoryAPI(cfg.ScanHistory))
-	}
-	if cfg.AlertHistory != nil {
-		mux.Handle("/alerts", NewAlertHistoryAPI(cfg.AlertHistory))
-	}
-	if cfg.PortTrend != nil {
-		mux.Handle("/trends", NewPortTrendAPI(cfg.PortTrend))
-	}
-	if cfg.PortSnapshot != nil {
-		mux.Handle("/snapshot", NewPortSnapshotAPI(cfg.PortSnapshot))
-	}
-	if cfg.ProcessMap != nil {
-		mux.Handle("/processes", NewProcessMapAPI(cfg.ProcessMap))
-	}
-	if cfg.Metrics != nil {
-		mux.Handle("/metrics", NewMetricsAPI(cfg.Metrics))
-	}
-
+	mux.Handle("/health", NewHTTPAPI(events))
+	mux.Handle("/events", NewHTTPAPI(events))
+	mux.Handle("/metrics", NewMetricsAPI(metrics))
+	mux.Handle("/scans", NewScanHistoryAPI(history))
+	mux.Handle("/alerts", NewAlertHistoryAPI(alertHistory))
+	mux.Handle("/trends", NewPortTrendAPI(trend))
+	mux.Handle("/snapshot", NewPortSnapshotAPI(snapshot))
+	mux.Handle("/processes", NewProcessMapAPI(processMap))
+	mux.Handle("/top", NewTopPortsAPI(topPorts))
+	mux.Handle("/velocity", NewPortVelocityAPI(velocity))
+	mux.Handle("/age", NewPortAgeAPI(age))
+	mux.Handle("/risk", NewPortRiskAPI(risk))
 	return mux
 }
