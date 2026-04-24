@@ -51,3 +51,24 @@ func TestAlertThrottleFilter_Removed_AlwaysPass(t *testing.T) {
 		t.Fatalf("expected 2, got %d", len(got))
 	}
 }
+
+func TestAlertThrottleFilter_AfterExpiry_AllowedAgain(t *testing.T) {
+	// Use a very short TTL so the throttle window expires quickly.
+	th := NewAlertThrottle(50 * time.Millisecond)
+	f := NewAlertThrottleFilter(th)
+	entries := []scanner.Entry{makeThrottleEntry(3000)}
+
+	// First call should be allowed.
+	if got := f.FilterAdded(entries); len(got) != 1 {
+		t.Fatalf("first call: expected 1, got %d", len(got))
+	}
+	// Second call within the window should be suppressed.
+	if got := f.FilterAdded(entries); len(got) != 0 {
+		t.Fatalf("second call: expected 0, got %d", len(got))
+	}
+	// Wait for the throttle window to expire, then the entry should pass again.
+	time.Sleep(100 * time.Millisecond)
+	if got := f.FilterAdded(entries); len(got) != 1 {
+		t.Fatalf("after expiry: expected 1, got %d", len(got))
+	}
+}
