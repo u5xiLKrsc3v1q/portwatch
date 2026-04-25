@@ -56,3 +56,14 @@ func (c *ScanCache) Invalidate() {
 	defer c.mu.Unlock()
 	c.entry = nil
 }
+
+// Age returns the duration since the cache was last populated, and false if
+// the cache is empty.
+func (c *ScanCache) Age() (time.Duration, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.entry == nil {
+		return 0, false
+	}
+	return c.nowFunc().Sub(c.entry.CachedAt), true
+}
