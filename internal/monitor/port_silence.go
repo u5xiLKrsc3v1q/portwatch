@@ -31,6 +31,7 @@ func NewPortSilenceStore() *PortSilenceStore {
 }
 
 // Silence adds a port to the silence list with an optional expiry duration.
+// If ttl is 0, the silence never expires.
 func (s *PortSilenceStore) Silence(e scanner.Entry, ttl time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -82,6 +83,22 @@ func (s *PortSilenceStore) Snapshot() []PortSilenceEntry {
 		out = append(out, e)
 	}
 	return out
+}
+
+// Purge removes all expired silence entries from the store.
+// It returns the number of entries removed.
+func (s *PortSilenceStore) Purge() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	count := 0
+	for key, e := range s.entries {
+		if e.ExpiresAt != nil && now.After(*e.ExpiresAt) {
+			delete(s.entries, key)
+			count++
+		}
+	}
+	return count
 }
 
 // NewPortSilenceAPI returns an http.Handler for the silence store.
